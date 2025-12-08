@@ -1,0 +1,5 @@
+const payload = {
+  email: "user@example.com",
+  password: "mypassword",
+  phone: "1234567890"
+};

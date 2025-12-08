@@ -1,0 +1,7 @@
+
+To create a demo user (via curl):
+curl -X POST "http://localhost:8000/auth/register" -H "Content-Type: application/json" -d '{"email":"demo@example.com","password":"test123","phone":"+911234567890"}'
+
+Then login:
+curl -X POST "http://localhost:8000/auth/login" -H "Content-Type: application/json" -d '{"email":"demo@example.com","password":"test123"}'
+Copy the access_token and store in localStorage as "token" to use the frontend.

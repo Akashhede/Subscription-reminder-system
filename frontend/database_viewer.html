@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Viewer - Subscription Reminder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px 10px 0 0;
+            font-weight: 600;
+        }
+        .table-striped tbody tr:nth-of-type(odd) {
+            background-color: #f8f9fa;
+        }
+        .btn-back {
+            margin-bottom: 20px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+        .filter-section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        .spinner-border {
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <a href="home.html" class="btn btn-outline-primary btn-back">← Back to Dashboard</a>
+    
+    <h1 class="mb-4">📊 Database Viewer</h1>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid" id="statsContainer">
+        <div class="stat-card">
+            <div class="stat-number">-</div>
+            <div class="stat-label">Total Subscriptions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">-</div>
+            <div class="stat-label">Current User</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">-</div>
+            <div class="stat-label">Upcoming Renewals</div>
+        </div>
+    </div>
+
+    <!-- User Information Card -->
+    <div class="card">
+        <div class="card-header">
+            👤 User Information
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Email:</strong> <span id="userEmail">-</span></p>
+                    <p><strong>User ID:</strong> <span id="userId">-</span></p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong>Phone:</strong> <span id="userPhone">-</span></p>
+                    <p><strong>Email Alerts:</strong> <span id="emailAlerts">-</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscriptions Table -->
+    <div class="card">
+        <div class="card-header">
+            📋 All Subscriptions
+        </div>
+        <div class="card-body">
+            <div id="loadingSpinner" class="loading" style="display: none;">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Loading subscriptions...</p>
+            </div>
+            <table class="table table-striped" id="subscriptionsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Renewal Date</th>
+                        <th>Days Remaining</th>
+                        <th>Note</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="subscriptionsList">
+                </tbody>
+            </table>
+            <div id="emptyMessage" class="alert alert-info">
+                No subscriptions found. Add one from the dashboard.
+            </div>
+        </div>
+    </div>
+
+    <!-- Export & Actions -->
+    <div class="card">
+        <div class="card-header">
+            ⚙️ Database Actions
+        </div>
+        <div class="card-body">
+            <button class="btn btn-primary" onclick="exportToJSON()">📥 Export as JSON</button>
+            <button class="btn btn-info" onclick="refreshData()">🔄 Refresh Data</button>
+            <button class="btn btn-warning" onclick="clearDatabase()">🗑️ Clear All Data</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = "http://localhost:8000";
+let token = localStorage.getItem("token") || "";
+let allSubscriptions = [];
+
+// Initialize page
+async function initPage() {
+    if (!token) {
+        alert("Please login first");
+        window.location.href = "login.html";
+        return;
+    }
+    
+    await loadUserInfo();
+    await loadSubscriptions();
+}
+
+// Load user information
+async function loadUserInfo() {
+    try {
+        const res = await fetch(API + "/auth/profile", {
+            headers: { "Authorization": "Bearer " + token }
+        });
+        
+        if (res.ok) {
+            const user = await res.json();
+            document.getElementById("userEmail").textContent = user.email;
+            document.getElementById("userId").textContent = user.id;
+            document.getElementById("userPhone").textContent = user.phone || "Not provided";
+            document.getElementById("emailAlerts").textContent = user.email_alerts_enabled ? "✅ Enabled" : "❌ Disabled";
+        }
+    } catch (error) {
+        console.error("Error loading user info:", error);
+    }
+}
+
+// Load subscriptions
+async function loadSubscriptions() {
+    document.getElementById("loadingSpinner").style.display = "block";
+    document.getElementById("subscriptionsTable").style.display = "none";
+    document.getElementById("emptyMessage").style.display = "none";
+    
+    try {
+        const res = await fetch(API + "/subscription/list", {
+            headers: { "Authorization": "Bearer " + token }
+        });
+        
+        if (res.ok) {
+            allSubscriptions = await res.json();
+            
+            if (allSubscriptions.length === 0) {
+                document.getElementById("emptyMessage").style.display = "block";
+            } else {
+                displaySubscriptions();
+                document.getElementById("subscriptionsTable").style.display = "table";
+                updateStats();
+            }
+        } else {
+            alert("Failed to load subscriptions");
+        }
+    } catch (error) {
+        console.error("Error:", error);
+        alert("Error loading subscriptions: " + error.message);
+    } finally {
+        document.getElementById("loadingSpinner").style.display = "none";
+    }
+}
+
+// Display subscriptions in table
+function displaySubscriptions() {
+    const tbody = document.getElementById("subscriptionsList");
+    tbody.innerHTML = "";
+    
+    allSubscriptions.forEach(sub => {
+        const renewalDate = new Date(sub.renewal_date);
+        const today = new Date();
+        const daysRemaining = Math.ceil((renewalDate - today) / (1000 * 60 * 60 * 24));
+        
+        let statusClass = "text-success";
+        if (daysRemaining < 0) statusClass = "text-danger";
+        else if (daysRemaining < 10) statusClass = "text-warning";
+        
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${sub.id}</td>
+            <td><strong>${sub.name}</strong></td>
+            <td>${sub.renewal_date}</td>
+            <td class="${statusClass}"><strong>${daysRemaining > 0 ? daysRemaining + " days" : "Expired"}</strong></td>
+            <td>${sub.note || "-"}</td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick="sendAlert(${sub.id})">Alert</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteSubscription(${sub.id})">Delete</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Update statistics
+function updateStats() {
+    const today = new Date();
+    let upcomingCount = 0;
+    
+    allSubscriptions.forEach(sub => {
+        const renewalDate = new Date(sub.renewal_date);
+        const daysRemaining = Math.ceil((renewalDate - today) / (1000 * 60 * 60 * 24));
+        if (daysRemaining > 0 && daysRemaining <= 10) {
+            upcomingCount++;
+        }
+    });
+    
+    // Update stats (this is a simplified version)
+    console.log("Total: " + allSubscriptions.length + ", Upcoming: " + upcomingCount);
+}
+
+// Send alert for subscription
+async function sendAlert(subId) {
+    if (!confirm("Send alert for this subscription?")) return;
+    
+    try {
+        const res = await fetch(API + "/subscription/send-alert/" + subId, {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + token }
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            alert(data.message);
+        } else {
+            const error = await res.json();
+            alert("Error: " + error.detail);
+        }
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
+}
+
+// Delete subscription
+async function deleteSubscription(subId) {
+    if (!confirm("Are you sure you want to delete this subscription?")) return;
+    
+    try {
+        const res = await fetch(API + "/subscription/delete/" + subId, {
+            method: "DELETE",
+            headers: { "Authorization": "Bearer " + token }
+        });
+        
+        if (res.ok) {
+            alert("Subscription deleted");
+            loadSubscriptions();
+        } else {
+            const error = await res.json();
+            alert("Error: " + error.detail);
+        }
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
+}
+
+// Export to JSON
+function exportToJSON() {
+    const data = {
+        exportDate: new Date().toISOString(),
+        subscriptions: allSubscriptions,
+        totalCount: allSubscriptions.length
+    };
+    
+    const dataStr = JSON.stringify(data, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "subscriptions_" + new Date().toISOString().split('T')[0] + ".json";
+    link.click();
+}
+
+// Refresh data
+async function refreshData() {
+    console.log("Refreshing...");
+    await loadUserInfo();
+    await loadSubscriptions();
+    alert("Data refreshed!");
+}
+
+// Clear database (with confirmation)
+async function clearDatabase() {
+    if (!confirm("⚠️ This will delete ALL subscriptions! Are you sure?")) return;
+    if (!confirm("This action cannot be undone. Delete all subscriptions?")) return;
+    
+    try {
+        for (const sub of allSubscriptions) {
+            await fetch(API + "/subscription/delete/" + sub.id, {
+                method: "DELETE",
+                headers: { "Authorization": "Bearer " + token }
+            });
+        }
+        alert("All subscriptions deleted!");
+        loadSubscriptions();
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
+}
+
+// Initialize on load
+window.addEventListener("load", initPage);
+</script>
+
+</body>
+</html>
