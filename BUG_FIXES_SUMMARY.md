@@ -131,3 +131,5 @@ python migrate_add_start_date.py
 3. Check browser console for any errors
 4. Verify email sending works with your SMTP configuration
 
+
+

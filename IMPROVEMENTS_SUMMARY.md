@@ -177,3 +177,5 @@ Potential improvements for future versions:
 - The system prevents duplicate alerts by checking the `AlertLog` table
 - HTML emails include both HTML and plain text versions for maximum compatibility
 
+
+
